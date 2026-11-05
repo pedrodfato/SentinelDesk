@@ -15,7 +15,7 @@ class SecurityEvent(BaseModel):
     host: str
     timestamp: AwareDatetime 
     event_type: EventType
-    user: str | None = None
+    username: str | None = None
     src_ip: str | None = None
     result: Outcome
     command: str | None = None

