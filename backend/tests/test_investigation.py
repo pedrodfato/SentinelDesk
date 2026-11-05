@@ -57,7 +57,7 @@ def seeded_database():
     except psycopg.OperationalError as exc:
         pytest.skip(f"Postgres unavailable: {exc}")
     with db.connect() as conn:
-        conn.execute("TRUNCATE events, incidents")
+        conn.execute("TRUNCATE events, incidents, investigations")
     events, _ = generate_bruteforce_scenario(seed=42)
     db.store_events(events)
     db.store_incidents(detect_bruteforce(events))

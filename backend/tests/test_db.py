@@ -11,10 +11,14 @@ from backend.db import (
     events_in_window,
     incident_id_for,
     init_schema,
+    latest_investigation,
     store_events,
     store_incidents,
+    store_investigation,
 )
 from backend.detection import detect_bruteforce
+from backend.investigation import Investigation
+from backend.report import Finding, IncidentReport
 from backend.synthetic import (
     generate_bruteforce_scenario,
     generate_failed_bruteforce_scenario,
@@ -28,7 +32,7 @@ def database():
     except psycopg.OperationalError as exc:
         pytest.skip(f"Postgres unavailable: {exc}")
     with connect() as conn:
-        conn.execute("TRUNCATE events, incidents")
+        conn.execute("TRUNCATE events, incidents, investigations")
     yield
 
 
@@ -92,3 +96,49 @@ def test_different_scenarios_get_different_incidents():
     with connect() as conn:
         rows = conn.execute("SELECT incident_id FROM incidents").fetchall()
     assert len(rows) == 2
+
+
+def test_investigations_accumulate_and_latest_wins(scenario):
+    """Re-running an incident is the audit trail, so rows add up instead of replacing."""
+    events, _ = scenario
+    store_events(events)
+    incident_id = store_incidents(detect_bruteforce(events))[0]
+
+    assert latest_investigation(incident_id) is None
+
+    first = Investigation(incident_id=incident_id, status="incomplete", elapsed_ms=10)
+    second = Investigation(
+        incident_id=incident_id,
+        status="complete",
+        elapsed_ms=20,
+        report=IncidentReport(
+            classification="true_positive",
+            incident_type="successful_ssh_bruteforce",
+            compromised=False,
+            summary="second run",
+            findings=[Finding(statement="failures", event_ids=[events[0].event_id])],
+            confidence="low",
+        ),
+    )
+    store_investigation(first, "fake-model")
+    store_investigation(second, "fake-model")
+
+    row = latest_investigation(incident_id)
+    assert row["status"] == "complete"
+    assert row["report"]["summary"] == "second run"
+    assert row["elapsed_ms"] == 20
+
+
+def test_investigation_without_a_report_still_stores(scenario):
+    """An incomplete run is a real outcome, not an error: it must survive the round trip."""
+    events, _ = scenario
+    store_events(events)
+    incident_id = store_incidents(detect_bruteforce(events))[0]
+
+    store_investigation(
+        Investigation(incident_id=incident_id, status="incomplete", elapsed_ms=5), "fake-model"
+    )
+
+    row = latest_investigation(incident_id)
+    assert row["report"] is None
+    assert row["status"] == "incomplete"
