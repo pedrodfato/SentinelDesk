@@ -110,6 +110,40 @@ def _benign_noise(rng: random.Random) -> list[dict]:
     return drafts
 
 
+def _assemble(drafts: list[dict]) -> tuple[list[SecurityEvent], list[str]]:
+    """Sort drafts by time, then number them, so event ids follow the timeline."""
+    drafts.sort(key=lambda d: d["timestamp"])
+
+    events = []
+    malicious_ids = []
+    for position, draft in enumerate(drafts, start=1):
+        event_id = f"evt_{position:04d}"
+        events.append(
+            SecurityEvent(
+                event_id=event_id,
+                timestamp=draft["timestamp"],
+                host=draft["host"],
+                event_type=draft["event_type"],
+                result=draft["result"],
+                user=draft["user"],
+                src_ip=draft["src_ip"],
+                command=draft["command"],
+                raw=_raw_line(
+                    draft["timestamp"],
+                    draft["host"],
+                    draft["event_type"],
+                    draft["result"],
+                    draft["user"],
+                    draft["src_ip"],
+                    draft["command"],
+                ),
+            )
+        )
+        if draft["malicious"]:
+            malicious_ids.append(event_id)
+    return events, malicious_ids
+
+
 def generate_bruteforce_scenario(
     seed: int = 42,
 ) -> tuple[list[SecurityEvent], GroundTruth]:
@@ -172,36 +206,7 @@ def generate_bruteforce_scenario(
         )
     )
 
-    # Sort first, then number: event ids follow the timeline.
-    drafts.sort(key=lambda d: d["timestamp"])
-
-    events = []
-    malicious_ids = []
-    for position, draft in enumerate(drafts, start=1):
-        event_id = f"evt_{position:04d}"
-        events.append(
-            SecurityEvent(
-                event_id=event_id,
-                timestamp=draft["timestamp"],
-                host=draft["host"],
-                event_type=draft["event_type"],
-                result=draft["result"],
-                user=draft["user"],
-                src_ip=draft["src_ip"],
-                command=draft["command"],
-                raw=_raw_line(
-                    draft["timestamp"],
-                    draft["host"],
-                    draft["event_type"],
-                    draft["result"],
-                    draft["user"],
-                    draft["src_ip"],
-                    draft["command"],
-                ),
-            )
-        )
-        if draft["malicious"]:
-            malicious_ids.append(event_id)
+    events, malicious_ids = _assemble(drafts)
 
     ground_truth = GroundTruth(
         scenario_id="ssh_bruteforce_success",
@@ -214,6 +219,46 @@ def generate_bruteforce_scenario(
         target_host=TARGET_HOST,
     )
     return events, ground_truth
+
+
+def generate_benign_scenario(seed: int = 42) -> tuple[list[SecurityEvent], GroundTruth]:
+    """An admin fumbles their password a few times, then logs in. Nothing happened.
+
+    This is the hard case: it looks like a brute force at a glance, so it is what
+    keeps the detection rule honest about false positives.
+    """
+    rng = random.Random(seed)
+    drafts = _benign_noise(rng)
+
+    admin_ip = "10.0.0.11"
+    now = BASE_TIME + timedelta(minutes=rng.randint(20, 40))
+    for _ in range(3):
+        drafts.append(
+            _draft(
+                timestamp=now,
+                host=TARGET_HOST,
+                event_type=EventType.LOGIN,
+                result=Outcome.FAILURE,
+                user="alice",
+                src_ip=admin_ip,
+            )
+        )
+        now += timedelta(seconds=rng.randint(90, 240))
+
+    drafts.append(
+        _draft(
+            timestamp=now,
+            host=TARGET_HOST,
+            event_type=EventType.LOGIN,
+            result=Outcome.SUCCESS,
+            user="alice",
+            src_ip=admin_ip,
+        )
+    )
+
+    events = _assemble(drafts)[0]
+    truth = GroundTruth(scenario_id="benign_admin_typos", is_malicious=False)
+    return events, truth
 
 
 def write_scenario(events: list[SecurityEvent], truth: GroundTruth, out_dir: Path) -> None:
