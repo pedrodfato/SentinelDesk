@@ -38,6 +38,27 @@ class StoredInvestigation(Investigation):
     created_at: datetime
 
 
+class InvestigationView(StoredInvestigation):
+    """The stored run plus the events it observed, in time order.
+
+    The timeline lives here, not behind its own endpoint: the events a report
+    can cite are exactly the ones the investigation observed, so the evidence
+    pool and the report are one thing the analyst reads together. The pool holds
+    what the agent found by searching (the successful login, sudo, cron), which
+    the originating alert never contained.
+    """
+
+    observed_events: list[SecurityEvent]
+
+
+def _investigation_view(incident_id: str) -> InvestigationView | None:
+    row = db.latest_investigation(incident_id)
+    if row is None:
+        return None
+    # events_by_ids already returns them ordered by timestamp.
+    return InvestigationView(**row, observed_events=db.events_by_ids(row["observed_event_ids"]))
+
+
 class IncidentDetail(BaseModel):
     incident: db.Incident
     events: list[SecurityEvent]
@@ -68,7 +89,7 @@ def get_incident_detail(incident_id: str) -> IncidentDetail:
 
 
 @app.post("/incidents/{incident_id}/investigate")
-def post_investigate(incident_id: str) -> Investigation:
+def post_investigate(incident_id: str) -> InvestigationView:
     """Run an investigation now and store it.
 
     Known ceiling: this blocks for roughly 4-10s while the model works, holding a
@@ -79,13 +100,15 @@ def post_investigate(incident_id: str) -> Investigation:
     _require_incident(incident_id)
     result = investigate(incident_id, GeminiModel())
     db.store_investigation(result, DEFAULT_MODEL)
-    return result
+    view = _investigation_view(incident_id)
+    assert view is not None  # just stored above
+    return view
 
 
 @app.get("/incidents/{incident_id}/investigation")
-def get_investigation(incident_id: str) -> StoredInvestigation:
+def get_investigation(incident_id: str) -> InvestigationView:
     _require_incident(incident_id)
-    row = db.latest_investigation(incident_id)
-    if row is None:
+    view = _investigation_view(incident_id)
+    if view is None:
         raise HTTPException(status_code=404, detail=f"no investigation for incident: {incident_id}")
-    return row
+    return view

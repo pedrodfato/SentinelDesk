@@ -45,14 +45,18 @@ export type IncidentReport = {
   gaps: string[];
 };
 
-export type StoredInvestigation = {
+export type Violation = { kind: string; detail: string };
+export type Step = { index: number; tool: string; events_returned: number };
+
+export type InvestigationView = {
   investigation_id: number;
   incident_id: string;
   status: "complete" | "rejected" | "incomplete" | "no_progress";
   report: IncidentReport | null;
-  validation: { violations: { kind: string; detail: string }[] } | null;
-  steps: { index: number; tool: string; events_returned: number }[];
+  validation: { violations: Violation[] } | null;
+  steps: Step[];
   observed_event_ids: string[];
+  observed_events: SecurityEvent[];
   elapsed_ms: number;
   model: string;
   created_at: string;
@@ -77,6 +81,24 @@ export function getIncident(incidentId: string) {
   return get<{ incident: Incident; events: SecurityEvent[] }>(`/incidents/${incidentId}`);
 }
 
-export function getLatestInvestigation(incidentId: string) {
-  return get<StoredInvestigation>(`/incidents/${incidentId}/investigation`);
+/** Returns the saved investigation, or null when none has been run yet (404). */
+export async function getLatestInvestigation(
+  incidentId: string,
+): Promise<InvestigationView | null> {
+  const response = await fetch(`${API_URL}/incidents/${incidentId}/investigation`, {
+    cache: "no-store",
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`investigation fetch failed: ${response.status}`);
+  return response.json() as Promise<InvestigationView>;
+}
+
+/** Runs the agent now. Slow (~4-10s) and billed, so callers guard against double submit. */
+export async function runInvestigation(incidentId: string): Promise<InvestigationView> {
+  const response = await fetch(`${API_URL}/incidents/${incidentId}/investigate`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`investigate failed: ${response.status}`);
+  return response.json() as Promise<InvestigationView>;
 }

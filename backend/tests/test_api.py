@@ -87,3 +87,30 @@ def test_unknown_incident_is_404():
 def test_cors_is_not_open_to_every_origin():
     response = client.get("/incidents", headers={"Origin": "https://evil.example"})
     assert response.headers.get("access-control-allow-origin") != "*"
+
+
+def test_investigation_view_carries_the_observed_events_in_time_order(incident_id):
+    """The timeline needs the full events the agent observed, not just their ids."""
+    db.store_investigation(
+        Investigation(
+            incident_id=incident_id,
+            status="complete",
+            elapsed_ms=9,
+            observed_event_ids=["seed"],  # replaced below by a realistic pool
+        ),
+        "fake-model",
+    )
+    # Overwrite with a pool that includes an event beyond the alert's own.
+    extra_ids = db.get_incident(incident_id).event_ids
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE investigations SET observed_event_ids = %s WHERE incident_id = %s",
+            (extra_ids, incident_id),
+        )
+
+    body = client.get(f"/incidents/{incident_id}/investigation").json()
+    events = body["observed_events"]
+
+    assert [e["event_id"] for e in events] == extra_ids
+    timestamps = [e["timestamp"] for e in events]
+    assert timestamps == sorted(timestamps)
