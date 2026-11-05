@@ -34,6 +34,7 @@ class GroundTruth(BaseModel):
 
     scenario_id: str
     is_malicious: bool
+    compromised: bool = False
     incident_type: str | None = None
     malicious_event_ids: list[str] = []
     expected_techniques: list[str] = []
@@ -220,6 +221,7 @@ def generate_bruteforce_scenario(
     ground_truth = GroundTruth(
         scenario_id=scenario_id,
         is_malicious=True,
+        compromised=True,
         incident_type="successful_ssh_bruteforce",
         malicious_event_ids=malicious_ids,
         expected_techniques=["T1110.001", "T1078", "T1548.003", "T1053.003"],
@@ -254,6 +256,7 @@ def generate_failed_bruteforce_scenario(seed: int = 42 ) -> tuple[list[SecurityE
     ground_truth = GroundTruth(
             scenario_id=scenario_id,
             is_malicious=True,
+            compromised=False,
             incident_type="failed_ssh_bruteforce",
             malicious_event_ids=malicious_ids,
             expected_techniques=["T1110.001"],
