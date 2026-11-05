@@ -67,8 +67,20 @@ def init_schema() -> None:
 
 
 def incident_id_for(alert: Alert) -> str:
-    """Derived from the alert's identity so re-ingesting cannot duplicate it."""
-    fingerprint = f"{alert.rule}|{alert.src_ip}|{alert.host}|{alert.first_seen.isoformat()}"
+    """Derived from the alert, so re-ingesting the same alert cannot duplicate it.
+
+    The evidence is part of the identity: rule, origin and start time alone
+    collide across scenarios that share them, which silently merges unrelated
+    incidents into one.
+
+    Known ceiling: in a live feed, a later run that catches more failures for
+    the same attack yields a different id. Fixing that needs incident merging,
+    which the batch-ingest MVP does not have.
+    """
+    evidence = ",".join(sorted(alert.event_ids))
+    fingerprint = (
+        f"{alert.rule}|{alert.src_ip}|{alert.host}|{alert.first_seen.isoformat()}|{evidence}"
+    )
     return "inc_" + hashlib.sha256(fingerprint.encode()).hexdigest()[:12]
 
 

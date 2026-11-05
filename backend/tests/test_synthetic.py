@@ -1,5 +1,5 @@
 from backend.events import EventType, Outcome
-from backend.synthetic import generate_bruteforce_scenario
+from backend.synthetic import generate_bruteforce_scenario, generate_benign_scenario, generate_failed_bruteforce_scenario
 
 
 def test_same_seed_gives_same_output():
@@ -46,3 +46,26 @@ def test_attack_follows_causal_order():
     assert len(failures) >= 5
     assert all(f.timestamp < success.timestamp for f in failures)
     assert success.timestamp < sudo.timestamp < cron.timestamp
+
+def test_failed_bruteforce_has_no_successful_login():
+    events, truth = generate_failed_bruteforce_scenario(seed=42)
+    
+    malicious = [e for e in events if e.event_id in truth.malicious_event_ids]
+    
+    assert malicious
+    assert all(e.result is Outcome.FAILURE for e in malicious)
+
+def test_failed_bruteforce_claims_only_the_bruteforce_technique():
+    events, truth = generate_failed_bruteforce_scenario(seed=42)
+    assert truth.expected_techniques == ["T1110.001"]
+
+def test_event_ids_never_collide_across_scenarios_or_seeds():
+    """Ids land in one shared table, so they have to be unique there, not per scenario."""
+    batches = [
+        generate_bruteforce_scenario(seed=42)[0],
+        generate_failed_bruteforce_scenario(seed=42)[0],
+        generate_benign_scenario(seed=42)[0],
+        generate_bruteforce_scenario(seed=7)[0],
+    ]
+    all_ids = [event.event_id for batch in batches for event in batch]
+    assert len(all_ids) == len(set(all_ids))

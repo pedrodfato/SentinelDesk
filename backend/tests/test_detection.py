@@ -1,5 +1,9 @@
 from backend.detection import BRUTEFORCE_RULE, detect_bruteforce
-from backend.synthetic import generate_benign_scenario, generate_bruteforce_scenario
+from backend.synthetic import (
+    generate_benign_scenario,
+    generate_bruteforce_scenario,
+    generate_failed_bruteforce_scenario,
+)
 
 
 def test_fires_on_bruteforce_scenario():
@@ -31,3 +35,13 @@ def test_threshold_is_what_separates_attack_from_noise():
     # Lowering the bar far enough makes even the benign admin look guilty:
     # the thresholds are the whole decision, not an implementation detail.
     assert detect_bruteforce(events, threshold=2, window_seconds=600) != []
+
+
+def test_rule_fires_even_when_bruteforce_fails():
+    """The rule detects the attempt. Whether it worked is the investigation's call."""
+    events, truth = generate_failed_bruteforce_scenario(seed=42)
+
+    alerts = detect_bruteforce(events)
+
+    assert len(alerts) == 1
+    assert alerts[0].src_ip == truth.attacker_ip

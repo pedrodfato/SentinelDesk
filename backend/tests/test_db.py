@@ -15,7 +15,10 @@ from backend.db import (
     store_incidents,
 )
 from backend.detection import detect_bruteforce
-from backend.synthetic import generate_bruteforce_scenario
+from backend.synthetic import (
+    generate_bruteforce_scenario,
+    generate_failed_bruteforce_scenario,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -72,3 +75,18 @@ def test_incident_id_is_stable_so_reingestion_cannot_duplicate(scenario):
     with connect() as conn:
         count = conn.execute("SELECT count(*) FROM incidents").fetchone()[0]
     assert count == 1
+
+
+def test_different_scenarios_get_different_incidents():
+    """Two scenarios share rule, origin and start time: only the evidence differs."""
+    attack_events, _ = generate_bruteforce_scenario(seed=42)
+    failed_events, _ = generate_failed_bruteforce_scenario(seed=42)
+    store_events(attack_events + failed_events)
+
+    attack_ids = store_incidents(detect_bruteforce(attack_events))
+    failed_ids = store_incidents(detect_bruteforce(failed_events))
+
+    assert attack_ids != failed_ids
+    with connect() as conn:
+        rows = conn.execute("SELECT incident_id FROM incidents").fetchall()
+    assert len(rows) == 2

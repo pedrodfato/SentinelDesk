@@ -8,10 +8,11 @@ import argparse
 
 from backend.db import init_schema, store_events, store_incidents
 from backend.detection import detect_bruteforce
-from backend.synthetic import generate_benign_scenario, generate_bruteforce_scenario
+from backend.synthetic import generate_benign_scenario, generate_bruteforce_scenario, generate_failed_bruteforce_scenario
 
 SCENARIOS = {
     "bruteforce": generate_bruteforce_scenario,
+    "failed_bruteforce": generate_failed_bruteforce_scenario,
     "benign": generate_benign_scenario,
 }
 

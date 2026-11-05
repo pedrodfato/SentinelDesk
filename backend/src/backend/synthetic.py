@@ -110,14 +110,21 @@ def _benign_noise(rng: random.Random) -> list[dict]:
     return drafts
 
 
-def _assemble(drafts: list[dict]) -> tuple[list[SecurityEvent], list[str]]:
-    """Sort drafts by time, then number them, so event ids follow the timeline."""
+def _assemble(
+    drafts: list[dict], scenario_id: str, seed: int
+) -> tuple[list[SecurityEvent], list[str]]:
+    """Sort drafts by time, then number them, so event ids follow the timeline.
+
+    Ids carry their scenario and seed because they are stored in one shared
+    table: a per-scenario counter would make `evt_0011` mean different events
+    in different scenarios, and ingestion would silently keep only the first.
+    """
     drafts.sort(key=lambda d: d["timestamp"])
 
     events = []
     malicious_ids = []
     for position, draft in enumerate(drafts, start=1):
-        event_id = f"evt_{position:04d}"
+        event_id = f"{scenario_id}-{seed}-evt{position:04d}"
         events.append(
             SecurityEvent(
                 event_id=event_id,
@@ -206,18 +213,54 @@ def generate_bruteforce_scenario(
         )
     )
 
-    events, malicious_ids = _assemble(drafts)
+    scenario_id = "ssh_bruteforce_success"
+    events, malicious_ids = _assemble(drafts, scenario_id, seed)
 
     ground_truth = GroundTruth(
-        scenario_id="ssh_bruteforce_success",
+        scenario_id=scenario_id,
         is_malicious=True,
         incident_type="successful_ssh_bruteforce",
         malicious_event_ids=malicious_ids,
         expected_techniques=["T1110.001", "T1078", "T1548.003", "T1053.003"],
         attacker_ip=ATTACKER_IP,
-        target_username=TARGET_USER,
+        target_user=TARGET_USER,
         target_host=TARGET_HOST,
     )
+    return events, ground_truth
+
+def generate_failed_bruteforce_scenario(seed: int = 42 ) -> tuple[list[SecurityEvent], GroundTruth]:
+    """Failed SSH brute force that never succeeds, so nothing happens."""
+    rng = random.Random(seed)
+    drafts = _benign_noise(rng)
+    now = BASE_TIME + timedelta(minutes=rng.randint(20, 40))
+    for _ in range(8):
+        drafts.append(
+            _draft(
+                timestamp=now,
+                host=TARGET_HOST,
+                event_type=EventType.LOGIN,
+                result=Outcome.FAILURE,
+                username=TARGET_USER,
+                src_ip=ATTACKER_IP,
+                malicious=True,
+            )
+        )
+        now += timedelta(seconds=rng.randint(2, 5))
+        
+    scenario_id = "failed_ssh_bruteforce"
+    events, malicious_ids = _assemble(drafts, scenario_id, seed)
+
+    ground_truth = GroundTruth(
+            scenario_id=scenario_id,
+            is_malicious=True,
+            incident_type="failed_ssh_bruteforce",
+            malicious_event_ids=malicious_ids,
+            expected_techniques=["T1110.001"],
+            attacker_ip=ATTACKER_IP,
+            target_user=TARGET_USER,
+            target_host=TARGET_HOST,
+        )
+    
     return events, ground_truth
 
 
@@ -256,9 +299,11 @@ def generate_benign_scenario(seed: int = 42) -> tuple[list[SecurityEvent], Groun
         )
     )
 
-    events = _assemble(drafts)[0]
-    truth = GroundTruth(scenario_id="benign_admin_typos", is_malicious=False)
+    scenario_id = "benign_admin_typos"
+    events = _assemble(drafts, scenario_id, seed)[0]
+    truth = GroundTruth(scenario_id=scenario_id, is_malicious=False)
     return events, truth
+
 
 
 def write_scenario(events: list[SecurityEvent], truth: GroundTruth, out_dir: Path) -> None:
@@ -271,6 +316,7 @@ def write_scenario(events: list[SecurityEvent], truth: GroundTruth, out_dir: Pat
     truth_path.write_text(
         json.dumps(truth.model_dump(), indent=2) + "\n", encoding="utf-8", newline="\n"
     )
+
 
 
 def main() -> None:
