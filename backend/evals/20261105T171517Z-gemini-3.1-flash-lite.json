@@ -1,0 +1,78 @@
+{
+  "ran_at": "2026-11-05T17:15:17.114812Z",
+  "model": "gemini-3.1-flash-lite",
+  "detection": [
+    {
+      "scenario_id": "ssh_bruteforce_success",
+      "should_alert": true,
+      "did_alert": true
+    },
+    {
+      "scenario_id": "failed_ssh_bruteforce",
+      "should_alert": true,
+      "did_alert": true
+    },
+    {
+      "scenario_id": "benign_admin_typos",
+      "should_alert": false,
+      "did_alert": false
+    }
+  ],
+  "investigations": [
+    {
+      "scenario_id": "ssh_bruteforce_success",
+      "status": "complete",
+      "classification_correct": true,
+      "compromise_correct": true,
+      "evidence": {
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "techniques": {
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "unsupported_claim_rate": 0.0,
+      "violations": [],
+      "steps": 2,
+      "latency_ms": 8827,
+      "input_tokens": 10440,
+      "output_tokens": 571
+    },
+    {
+      "scenario_id": "failed_ssh_bruteforce",
+      "status": "complete",
+      "classification_correct": true,
+      "compromise_correct": true,
+      "evidence": {
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "techniques": {
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "unsupported_claim_rate": 0.0,
+      "violations": [],
+      "steps": 2,
+      "latency_ms": 7717,
+      "input_tokens": 8494,
+      "output_tokens": 414
+    }
+  ],
+  "summary": {
+    "detection_accuracy": 1.0,
+    "classification_accuracy": 1.0,
+    "compromise_accuracy": 1.0,
+    "evidence_precision": 1.0,
+    "evidence_recall": 1.0,
+    "technique_precision": 1.0,
+    "technique_recall": 1.0,
+    "unsupported_claim_rate": 0.0,
+    "rejected_reports": 0,
+    "p50_latency_ms": 8827,
+    "total_input_tokens": 18934,
+    "total_output_tokens": 985,
+    "estimated_cost_usd": 0.006211
+  }
+}

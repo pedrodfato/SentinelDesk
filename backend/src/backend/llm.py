@@ -6,10 +6,12 @@ the loop, the tools and the validator are testable without a network call.
 
 import json
 import os
+import time
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from google.genai.errors import ServerError
 
 from backend.investigation import ModelTurn, ToolCall, parse_report
 from backend.report import IncidentReport
@@ -18,6 +20,8 @@ load_dotenv()
 
 DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 FINISH_TOOL = "submit_report"
+MAX_RETRIES = 4
+RETRY_BACKOFF_SECONDS = 2
 
 
 class UsageCounter:
@@ -101,19 +105,29 @@ class GeminiModel:
         self.model = model
         self.usage = UsageCounter()
 
+    def _generate_with_retry(self, system, contents, declarations):
+        """Shared-capacity 503s are routine, and a transient one must not abort an eval run."""
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            tools=[types.Tool(function_declarations=declarations)],
+            temperature=0,
+        )
+        for attempt in range(MAX_RETRIES):
+            try:
+                return self.client.models.generate_content(
+                    model=self.model, contents=contents, config=config
+                )
+            except ServerError:
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(RETRY_BACKOFF_SECONDS * 2**attempt)
+        raise AssertionError("unreachable")
+
     def next_turn(self, conversation: list[dict], tools: list[dict]) -> ModelTurn:
         system, contents = _to_gemini_contents(conversation)
         declarations = [*tools, _submit_report_tool()]
 
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                tools=[types.Tool(function_declarations=declarations)],
-                temperature=0,
-            ),
-        )
+        response = self._generate_with_retry(system, contents, declarations)
         self.usage.add(response.usage_metadata)
 
         calls: list[ToolCall] = []

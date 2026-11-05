@@ -12,10 +12,13 @@ from datetime import datetime
 import psycopg
 from dotenv import load_dotenv
 from psycopg.rows import class_row
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from backend.detection import Alert
 from backend.events import SecurityEvent
+from psycopg.types.json import Json
+from psycopg.rows import dict_row
 
 load_dotenv()
 
@@ -48,6 +51,19 @@ CREATE TABLE IF NOT EXISTS incidents (
     last_seen   TIMESTAMPTZ NOT NULL,
     status      TEXT NOT NULL DEFAULT 'open',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS investigations (
+    investigation_id BIGSERIAL PRIMARY KEY,
+    incident_id      TEXT NOT NULL REFERENCES incidents(incident_id),
+    status           TEXT NOT NULL,
+    report           JSONB,
+    validation       JSONB,
+    steps            JSONB NOT NULL,
+    observed_event_ids TEXT[] NOT NULL,
+    elapsed_ms       INT NOT NULL,
+    model            TEXT NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 
@@ -219,6 +235,54 @@ def get_incident(incident_id: str) -> Incident | None:
             """
             SELECT incident_id, rule, scenario_id, host, src_ip, event_ids, first_seen, last_seen, status
             FROM incidents WHERE incident_id = %s
+            """,
+            (incident_id,),
+        )
+        return cur.fetchone()
+
+
+def store_investigation(investigation, model: str) -> int:
+    """Persist one investigation run and return its id.
+
+    No ON CONFLICT here, unlike events and incidents: re-investigating the same
+    incident after a prompt change is the point, so every run is a new row and
+    the table doubles as the audit trail.
+    """
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO investigations (incident_id, status, report, validation, steps,
+                                        observed_event_ids, elapsed_ms, model)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING investigation_id
+            """,
+            (
+                investigation.incident_id,
+                investigation.status,
+                Jsonb(investigation.report.model_dump(mode="json"))
+                if investigation.report
+                else None,
+                Jsonb(investigation.validation.model_dump(mode="json"))
+                if investigation.validation
+                else None,
+                Jsonb([step.model_dump(mode="json") for step in investigation.steps]),
+                investigation.observed_event_ids,
+                investigation.elapsed_ms,
+                model,
+            ),
+        )
+        return cur.fetchone()[0]
+
+def latest_investigation(incident_id: str) -> dict | None:
+    """Return the most recent investigation for an incident, or None if none exist."""
+    with connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT investigation_id, incident_id, status, report, validation, steps, observed_event_ids, elapsed_ms, model, created_at
+            FROM investigations
+            WHERE incident_id = %s
+            ORDER BY investigation_id DESC
+            LIMIT 1
             """,
             (incident_id,),
         )

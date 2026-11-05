@@ -12,7 +12,7 @@ from backend.investigation import (
     investigate,
     parse_report,
 )
-from backend.report import Finding, IncidentReport
+from backend.report import TECHNIQUES, Finding, IncidentReport
 from backend.synthetic import (
     generate_bruteforce_scenario,
     generate_failed_bruteforce_scenario,
@@ -238,3 +238,18 @@ def test_search_cannot_reach_another_scenarios_events(incident):
 
     leaked = set(result.observed_event_ids) & {e.event_id for e in other_events}
     assert not leaked, f"investigation read {len(leaked)} events from another scenario"
+
+
+def test_catalogue_is_discoverable_not_guessable(incident):
+    """Attribution needs the catalogue in hand: lookup alone only confirms a guess."""
+    model = ScriptedModel(
+        [
+            ModelTurn(tool_calls=[ToolCall(name="list_techniques", args={})]),
+            ModelTurn(report=report_citing(incident.event_ids[:1])),
+        ]
+    )
+
+    investigate(incident.incident_id, model)
+
+    listed = [m for m in model.last_conversation if m["role"] == "tool"][0]["content"]
+    assert all(technique in listed for technique in TECHNIQUES)
