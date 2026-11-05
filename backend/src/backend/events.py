@@ -4,6 +4,7 @@ from enum import Enum
 class EventType(str, Enum):
     LOGIN = "login"
     SUDO = "sudo"
+    CRON_CREATE = "cron_create"
 
 class Outcome(str, Enum):
     SUCCESS = "success"
