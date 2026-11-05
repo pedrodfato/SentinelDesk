@@ -21,6 +21,7 @@ class Alert(BaseModel):
     """One rule firing on one (source ip, host) pair."""
 
     rule: str
+    scenario_id: str
     host: str
     src_ip: str
     event_ids: list[str]
@@ -65,6 +66,7 @@ def detect_bruteforce(
             alerts.append(
                 Alert(
                     rule=BRUTEFORCE_RULE,
+                    scenario_id=flagged[0].scenario_id,
                     host=host,
                     src_ip=src_ip,
                     event_ids=[event.event_id for event in flagged],

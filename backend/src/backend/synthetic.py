@@ -128,6 +128,7 @@ def _assemble(
         events.append(
             SecurityEvent(
                 event_id=event_id,
+                scenario_id=scenario_id,
                 timestamp=draft["timestamp"],
                 host=draft["host"],
                 event_type=draft["event_type"],

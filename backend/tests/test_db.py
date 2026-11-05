@@ -56,7 +56,9 @@ def test_window_query_filters_by_source_ip(scenario):
     window_start = events[0].timestamp - timedelta(minutes=1)
     window_end = events[-1].timestamp + timedelta(minutes=1)
 
-    found = events_in_window(window_start, window_end, src_ip=truth.attacker_ip)
+    found = events_in_window(
+        truth.scenario_id, window_start, window_end, src_ip=truth.attacker_ip
+    )
 
     assert found
     assert {e.src_ip for e in found} == {truth.attacker_ip}

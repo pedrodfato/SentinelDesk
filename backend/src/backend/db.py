@@ -12,6 +12,7 @@ from datetime import datetime
 import psycopg
 from dotenv import load_dotenv
 from psycopg.rows import class_row
+from pydantic import BaseModel
 
 from backend.detection import Alert
 from backend.events import SecurityEvent
@@ -20,7 +21,8 @@ load_dotenv()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
-    event_id   TEXT PRIMARY KEY,
+    event_id    TEXT PRIMARY KEY,
+    scenario_id TEXT NOT NULL,
     timestamp  TIMESTAMPTZ NOT NULL,
     host       TEXT NOT NULL,
     event_type TEXT NOT NULL,
@@ -33,10 +35,12 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_timestamp_idx ON events (timestamp);
 CREATE INDEX IF NOT EXISTS events_src_ip_idx ON events (src_ip);
 CREATE INDEX IF NOT EXISTS events_host_time_idx ON events (host, timestamp);
+CREATE INDEX IF NOT EXISTS events_scenario_idx ON events (scenario_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS incidents (
     incident_id TEXT PRIMARY KEY,
     rule        TEXT NOT NULL,
+    scenario_id TEXT NOT NULL,
     host        TEXT NOT NULL,
     src_ip      TEXT NOT NULL,
     event_ids   TEXT[] NOT NULL,
@@ -89,14 +93,15 @@ def store_events(events: list[SecurityEvent]) -> int:
     with connect() as conn, conn.cursor() as cur:
         cur.executemany(
             """
-            INSERT INTO events (event_id, timestamp, host, event_type, result,
+            INSERT INTO events (event_id, scenario_id, timestamp, host, event_type, result,
                                 username, src_ip, command, raw)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_id) DO NOTHING
             """,
             [
                 (
                     e.event_id,
+                    e.scenario_id,
                     e.timestamp,
                     e.host,
                     e.event_type.value,
@@ -120,14 +125,15 @@ def store_incidents(alerts: list[Alert]) -> list[str]:
             incident_id = incident_id_for(alert)
             cur.execute(
                 """
-                INSERT INTO incidents (incident_id, rule, host, src_ip, event_ids,
+                INSERT INTO incidents (incident_id, rule, scenario_id, host, src_ip, event_ids,
                                        first_seen, last_seen)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (incident_id) DO NOTHING
                 """,
                 (
                     incident_id,
                     alert.rule,
+                    alert.scenario_id,
                     alert.host,
                     alert.src_ip,
                     alert.event_ids,
@@ -149,6 +155,7 @@ def events_by_ids(event_ids: list[str]) -> list[SecurityEvent]:
 
 
 def events_in_window(
+    scenario_id: str,
     start: datetime,
     end: datetime,
     host: str | None = None,
@@ -161,7 +168,8 @@ def events_in_window(
         cur.execute(
             """
             SELECT * FROM events
-            WHERE timestamp BETWEEN %(start)s AND %(end)s
+            WHERE scenario_id = %(scenario_id)s
+              AND timestamp BETWEEN %(start)s AND %(end)s
               AND (%(host)s::text IS NULL OR host = %(host)s)
               AND (%(src_ip)s::text IS NULL OR src_ip = %(src_ip)s)
               AND (%(username)s::text IS NULL OR username = %(username)s)
@@ -169,6 +177,7 @@ def events_in_window(
             LIMIT %(limit)s
             """,
             {
+                "scenario_id": scenario_id,
                 "start": start,
                 "end": end,
                 "host": host,
@@ -178,3 +187,39 @@ def events_in_window(
             },
         )
         return cur.fetchall()
+
+
+class Incident(BaseModel):
+    incident_id: str
+    rule: str
+    scenario_id: str
+    host: str
+    src_ip: str
+    event_ids: list[str]
+    first_seen: datetime
+    last_seen: datetime
+    status: str
+
+
+def list_incidents(limit: int = 50) -> list[Incident]:
+    with connect() as conn, conn.cursor(row_factory=class_row(Incident)) as cur:
+        cur.execute(
+            """
+            SELECT incident_id, rule, scenario_id, host, src_ip, event_ids, first_seen, last_seen, status
+            FROM incidents ORDER BY first_seen DESC LIMIT %s
+            """,
+            (limit,),
+        )
+        return cur.fetchall()
+
+
+def get_incident(incident_id: str) -> Incident | None:
+    with connect() as conn, conn.cursor(row_factory=class_row(Incident)) as cur:
+        cur.execute(
+            """
+            SELECT incident_id, rule, scenario_id, host, src_ip, event_ids, first_seen, last_seen, status
+            FROM incidents WHERE incident_id = %s
+            """,
+            (incident_id,),
+        )
+        return cur.fetchone()

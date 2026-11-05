@@ -12,6 +12,7 @@ class Outcome(str, Enum):
     
 class SecurityEvent(BaseModel):
     event_id: str
+    scenario_id: str
     host: str
     timestamp: AwareDatetime 
     event_type: EventType
